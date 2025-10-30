@@ -73,6 +73,7 @@ public/               # Static assets and icons
 
 ## Documentation
 - [Project Manual](docs/manual.md)
+- [Database Setup Guide](docs/database-setup.md)
 - [Use Case Guide](docs/use-cases.md)
 - [Contributing Guide](docs/CONTRIBUTING.md)
 - [Code of Conduct](docs/CODE_OF_CONDUCT.md)
