@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ID } from 'appwrite';
 import { account, databases, storage, DATABASE_ID, COLLECTIONS, STORAGE_BUCKET_ID } from '@/lib/appwrite';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly } from '@/config/demo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ export default function BusinessSettingsPage() {
     userBusinesses,
     loading: businessLoading,
     refreshBusinesses,
+    isDemoUser,
   } = useBusinessContext();
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -95,6 +97,9 @@ export default function BusinessSettingsPage() {
   }, [currentMembership]);
 
   const canEdit = useMemo(() => {
+    if (isDemoUser) {
+      return false;
+    }
     if (!currentBusiness || !userId) {
       return false;
     }
@@ -102,14 +107,17 @@ export default function BusinessSettingsPage() {
       return true;
     }
     return normalizedRole === 'owner' || normalizedRole === 'admin';
-  }, [currentBusiness, normalizedRole, userId]);
+  }, [currentBusiness, normalizedRole, userId, isDemoUser]);
 
   const canDelete = useMemo(() => {
+    if (isDemoUser) {
+      return false;
+    }
     if (!currentBusiness || !userId) {
       return false;
     }
     return typeof currentBusiness.ownerId === 'string' && currentBusiness.ownerId === userId;
-  }, [currentBusiness, userId]);
+  }, [currentBusiness, userId, isDemoUser]);
 
   const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
@@ -128,6 +136,11 @@ export default function BusinessSettingsPage() {
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
 
     if (!currentBusiness) {
       setError('No business selected.');
@@ -185,6 +198,11 @@ export default function BusinessSettingsPage() {
   };
 
   const handleDelete = async () => {
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!currentBusiness || !canDelete) {
       return;
     }
@@ -245,6 +263,11 @@ export default function BusinessSettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10">
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+          Demo mode is read-only. Updates to business details are disabled for the shared demo account.
+        </div>
+      )}
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle className="text-2xl font-semibold">Business Settings</CardTitle>

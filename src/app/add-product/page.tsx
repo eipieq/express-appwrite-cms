@@ -31,6 +31,7 @@ import {
   serializeCategoryMeta,
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly } from '@/config/demo';
 
 type VariantOption = {
   name: string;
@@ -48,7 +49,7 @@ type GeneratedVariant = {
 
 export default function AddProductPage() {
   const router = useRouter();
-  const { currentBusiness, userBusinesses, loading: businessLoading } = useBusinessContext();
+  const { currentBusiness, userBusinesses, loading: businessLoading, isDemoUser } = useBusinessContext();
   const [userId, setUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdRef = useRef<string | null>(null);
@@ -284,6 +285,11 @@ export default function AddProductPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
     
     if (!userId) {
       alert('User not authenticated');
@@ -396,6 +402,11 @@ export default function AddProductPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+          Demo mode is read-only. You can experiment with the form, but products will not be saved.
+        </div>
+      )}
       <h1 className="text-3xl font-bold mb-6">Add New Product</h1>
       
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -653,7 +664,7 @@ export default function AddProductPage() {
         </Card>
 
         <div className="flex gap-4">
-          <Button type="submit" disabled={loading} className="flex-1">
+          <Button type="submit" disabled={loading || isDemoUser} className="flex-1">
             {loading ? 'Creating Product...' : 'Create Product'}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.push('/dashboard')}>

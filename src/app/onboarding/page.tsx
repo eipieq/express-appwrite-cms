@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { BRANDING } from "@/config/branding";
+import { alertDemoReadOnly } from '@/config/demo';
+import { X } from 'lucide-react';
 
 function slugify(value: string): string {
   return value
@@ -28,6 +30,7 @@ function OnboardingContent() {
     loading: businessLoading,
     refreshBusinesses,
     switchBusiness,
+    isDemoUser,
   } = useBusinessContext();
   const searchParams = useSearchParams();
   const forceCreate = searchParams?.get('mode') === 'create';
@@ -78,6 +81,11 @@ function OnboardingContent() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
 
     if (!userId) {
       setError('Unable to load your account. Please sign in again.');
@@ -148,17 +156,34 @@ function OnboardingContent() {
   return (
     <div className="mx-auto flex min-h-[80vh] w-full max-w-lg items-center justify-center px-4 py-10">
       <Card className="w-full shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-2xl">
-            {forceCreate ? 'Create a Business' : 'Create Your First Business'}
-          </CardTitle>
-          <p className="mt-2 text-sm text-slate-600">
-            {forceCreate
-              ? `Add another business to your ${BRANDING.name} workspace.`
-              : 'We noticed you don’t have a business yet. Let’s get you set up so you can start managing products.'}
-          </p>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="text-2xl">
+              {forceCreate ? 'Create a Business' : 'Create Your First Business'}
+            </CardTitle>
+            <p className="mt-2 text-sm text-slate-600">
+              {forceCreate
+                ? `Add another business to your ${BRANDING.name} workspace.`
+                : 'We noticed you don’t have a business yet. Let’s get you set up so you can start managing products.'}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push('/dashboard')}
+            aria-label="Close"
+            className="self-end text-slate-400 transition hover:text-slate-600"
+          >
+            <X className="h-5 w-5" />
+          </Button>
         </CardHeader>
         <CardContent>
+          {isDemoUser && (
+            <div className="mb-4 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+              Demo mode is read-only. You can walk through the form, but the shared demo account cannot create businesses.
+            </div>
+          )}
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -170,7 +195,7 @@ function OnboardingContent() {
               <Input
                 id="business-name"
                 value={name}
-                disabled={submitting}
+                disabled={submitting || isDemoUser}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={`e.g., ${BRANDING.name} Traders`}
                 required
@@ -181,7 +206,7 @@ function OnboardingContent() {
               <Input
                 id="business-whatsapp"
                 value={whatsappNumber}
-                disabled={submitting}
+                disabled={submitting || isDemoUser}
                 onChange={(event) => setWhatsappNumber(event.target.value)}
                 placeholder="+91 98765 43210"
               />
@@ -191,14 +216,14 @@ function OnboardingContent() {
               <Textarea
                 id="business-address"
                 value={address}
-                disabled={submitting}
+                disabled={submitting || isDemoUser}
                 onChange={(event) => setAddress(event.target.value)}
                 placeholder="Street, City, State, ZIP"
                 className="min-h-[100px]"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Creating business…' : 'Create Business'}
+            <Button type="submit" className="w-full" disabled={submitting || isDemoUser}>
+              {submitting ? 'Creating business…' : isDemoUser ? 'Demo mode is read-only' : 'Create Business'}
             </Button>
           </form>
         </CardContent>

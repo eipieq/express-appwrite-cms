@@ -27,6 +27,7 @@ import {
   serializeCategoryMeta,
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly } from '@/config/demo';
 
 type CSVRow = {
   'Product Code': string;
@@ -566,7 +567,7 @@ export default function ImportProductsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [categoryCreationChoices, setCategoryCreationChoices] = useState<Record<string, boolean>>({});
-  const { currentBusiness, userBusinesses, loading: businessLoading } = useBusinessContext();
+  const { currentBusiness, userBusinesses, loading: businessLoading, isDemoUser } = useBusinessContext();
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdProductsRef = useRef<string | null>(null);
   const previousBusinessIdCategoriesRef = useRef<string | null>(null);
@@ -1185,6 +1186,11 @@ export default function ImportProductsPage() {
   const hasUnresolvedCategories = unresolvedAfterPlanCount > 0;
 
   const handleImport = async () => {
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!userId) {
       alert('User not authenticated');
       return;
@@ -1683,6 +1689,11 @@ export default function ImportProductsPage() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+          Demo mode is read-only. Use this import flow to explore the experience, but data will not be written.
+        </div>
+      )}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Import Products from CSV</h1>
         <Button variant="outline" onClick={() => router.push('/dashboard')}>
@@ -1858,16 +1869,18 @@ export default function ImportProductsPage() {
               <div className="mt-6">
                 <Button 
                   onClick={handleImport} 
-                  disabled={importing || selectedForImport.length === 0 || hasUnresolvedCategories}
+                  disabled={importing || selectedForImport.length === 0 || hasUnresolvedCategories || isDemoUser}
                   className="w-full"
                 >
                   {importing 
                     ? `Importing... ${progress.current}/${progress.total}` 
                   : selectedForImport.length === 0
                     ? 'Select products to import'
-                    : hasUnresolvedCategories
-                      ? 'Resolve category mappings'
-                      : `Import ${selectedForImport.length} Products`}
+                    : isDemoUser
+                      ? 'Demo mode is read-only'
+                      : hasUnresolvedCategories
+                        ? 'Resolve category mappings'
+                        : `Import ${selectedForImport.length} Products`}
                 </Button>
               </div>
             </CardContent>

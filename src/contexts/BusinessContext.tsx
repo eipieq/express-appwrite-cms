@@ -10,8 +10,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Query, type Models } from 'appwrite';
+import { AppwriteException, Query, type Models } from 'appwrite';
 import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
+import { isDemoUserEmail, setDemoModeCookie } from '@/config/demo';
+
+type AccountUser = Models.User<Models.Preferences>;
 
 type BusinessDocument = Models.Document & {
   name?: string | null;
@@ -31,6 +34,8 @@ type BusinessMembershipDocument = Models.Document & {
 };
 
 type BusinessContextValue = {
+  currentUser: AccountUser | null;
+  isDemoUser: boolean;
   currentBusiness: BusinessDocument | null;
   currentMembership: BusinessMembershipDocument | null;
   userBusinesses: BusinessDocument[];
@@ -45,6 +50,8 @@ const BusinessContext = createContext<BusinessContextValue | undefined>(undefine
 const ACTIVE_BUSINESS_STORAGE_KEY = 'express-appwrite-cms-active-business-id';
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<AccountUser | null>(null);
+  const [isDemoUser, setIsDemoUser] = useState(false);
   const [userBusinesses, setUserBusinesses] = useState<BusinessDocument[]>([]);
   const [memberships, setMemberships] = useState<BusinessMembershipDocument[]>([]);
   const [activeBusinessId, setActiveBusinessId] = useState<string | null>(null);
@@ -88,7 +95,25 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
   );
 
   const fetchBusinesses = useCallback(async () => {
-    const user = await account.get();
+    let user: AccountUser;
+    try {
+      user = await account.get();
+    } catch (error) {
+      if (error instanceof AppwriteException && error.code === 401) {
+        setCurrentUser(null);
+        setIsDemoUser(false);
+        setDemoModeCookie(false);
+
+        return { businesses: [] as BusinessDocument[], memberships: [] as BusinessMembershipDocument[] };
+      }
+      throw error;
+    }
+
+    setCurrentUser(user);
+
+    const demo = isDemoUserEmail(user.email);
+    setIsDemoUser(demo);
+    setDemoModeCookie(demo);
 
     const membershipsResponse = await databases.listDocuments(
       DATABASE_ID,
@@ -174,6 +199,9 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
       setMemberships([]);
       setActiveBusinessId(null);
       persistActiveBusinessId(null);
+      setCurrentUser(null);
+      setIsDemoUser(false);
+      setDemoModeCookie(false);
     } finally {
       setLoading(false);
       isRefreshingRef.current = false;
@@ -200,6 +228,9 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
         setMemberships([]);
         setActiveBusinessId(null);
         persistActiveBusinessId(null);
+        setCurrentUser(null);
+        setIsDemoUser(false);
+        setDemoModeCookie(false);
       } finally {
         if (!isCancelled) {
           setLoading(false);
@@ -255,6 +286,8 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
       loading,
       switchBusiness,
       refreshBusinesses,
+      currentUser,
+      isDemoUser,
     }),
     [
       currentBusiness,
@@ -264,6 +297,8 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
       loading,
       switchBusiness,
       refreshBusinesses,
+      currentUser,
+      isDemoUser,
     ]
   );
 

@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { account } from '@/lib/appwrite';
+import { DEMO_EMAIL, DEMO_PASSWORD, isDemoUserEmail, setDemoModeCookie } from '@/config/demo';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,14 +17,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const demoAvailable = DEMO_EMAIL.length > 0 && DEMO_PASSWORD.length > 0;
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loginWithCredentials = async (
+    targetEmail: string,
+    targetPassword: string,
+    { forceDemoMode = false }: { forceDemoMode?: boolean } = {}
+  ) => {
     setLoading(true);
     setError('');
 
     try {
-      await account.createEmailPasswordSession(email, password);
+      await account.createEmailPasswordSession(targetEmail, targetPassword);
+      const isDemo = forceDemoMode || isDemoUserEmail(targetEmail);
+      setDemoModeCookie(isDemo);
       document.cookie = `appwrite-session=active; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
       router.push('/dashboard');
     } catch (err: unknown) {
@@ -32,6 +39,22 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loginWithCredentials(email, password);
+  };
+
+  const handleDemoLogin = async () => {
+    if (!demoAvailable) {
+      setError('Demo credentials are not configured yet.');
+      return;
+    }
+
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    await loginWithCredentials(DEMO_EMAIL, DEMO_PASSWORD, { forceDemoMode: true });
   };
 
   return (
@@ -74,6 +97,22 @@ export default function LoginPage() {
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? 'Logging in...' : 'Login'}
             </Button>
+            {demoAvailable && (
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDemoLogin}
+                  disabled={loading}
+                  className="w-full"
+                >
+                  Explore The Demo
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Uses the shared demo account so you can browse without affecting real data.
+                </p>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>

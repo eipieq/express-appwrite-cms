@@ -5,6 +5,7 @@ import { ID, Query, type Models } from 'appwrite';
 import { useRouter } from 'next/navigation';
 import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly } from '@/config/demo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,7 @@ export default function TeamPage() {
     userBusinesses,
     loading: businessLoading,
     refreshBusinesses,
+    isDemoUser,
   } = useBusinessContext();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -44,13 +46,16 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
 
   const canManageTeam = useMemo(() => {
+    if (isDemoUser) {
+      return false;
+    }
     if (!currentBusiness || !currentMembership) {
       return false;
     }
 
     const role = currentMembership.role ? String(currentMembership.role).toLowerCase() : '';
     return role === 'owner' || role === 'admin';
-  }, [currentBusiness, currentMembership]);
+  }, [currentBusiness, currentMembership, isDemoUser]);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,6 +116,11 @@ export default function TeamPage() {
     event.preventDefault();
     setError(null);
 
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!currentBusiness) {
       setError('No active business selected.');
       return;
@@ -154,6 +164,11 @@ export default function TeamPage() {
   };
 
   const handleRemoveMember = async (member: BusinessUserDocument) => {
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!currentBusiness) {
       return;
     }
@@ -215,18 +230,29 @@ export default function TeamPage() {
         </p>
       </div>
 
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+          Demo mode is read-only. You can preview the team workflow, but invites and removals are disabled.
+        </div>
+      )}
+
       {error && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {canManageTeam && (
+      {(canManageTeam || isDemoUser) && (
         <Card className="mb-8">
           <CardHeader>
             <CardTitle>Add a team member</CardTitle>
           </CardHeader>
           <CardContent>
+            {!canManageTeam && isDemoUser && (
+              <p className="mb-4 text-sm text-slate-500">
+                This form is disabled because the shared demo account cannot change the workspace team.
+              </p>
+            )}
             <form onSubmit={handleInvite} className="flex flex-col gap-4 sm:flex-row sm:items-end">
               <div className="flex-1">
                 <Label htmlFor="invite-userId">Appwrite User ID</Label>
@@ -236,7 +262,7 @@ export default function TeamPage() {
                   onChange={(event) => setInviteUserId(event.target.value)}
                   placeholder="userId"
                   required
-                  disabled={inviteLoading}
+                  disabled={inviteLoading || !canManageTeam}
                 />
               </div>
               <div className="sm:w-48">
@@ -246,7 +272,7 @@ export default function TeamPage() {
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={inviteRole}
                   onChange={(event) => setInviteRole(event.target.value)}
-                  disabled={inviteLoading}
+                  disabled={inviteLoading || !canManageTeam}
                 >
                   <option value="admin">Admin</option>
                   <option value="editor">Editor</option>
@@ -254,7 +280,7 @@ export default function TeamPage() {
                 </select>
               </div>
               <div>
-                <Button type="submit" disabled={inviteLoading}>
+                <Button type="submit" disabled={inviteLoading || !canManageTeam}>
                   {inviteLoading ? 'Adding…' : 'Add Member'}
                 </Button>
               </div>

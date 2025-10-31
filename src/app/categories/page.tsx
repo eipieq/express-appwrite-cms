@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { alertDemoReadOnly } from '@/config/demo';
+import { useBusinessContext } from '@/contexts/BusinessContext';
 
 type Category = {
   $id: string;
@@ -23,6 +25,7 @@ type Category = {
 
 export default function CategoriesPage() {
   const router = useRouter();
+  const { isDemoUser } = useBusinessContext();
   const [userId, setUserId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +119,11 @@ export default function CategoriesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!userId || !name.trim() || !slug.trim()) {
       alert('Name and slug are required');
       return;
@@ -177,6 +185,11 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!confirm('Delete this category? This cannot be undone.')) return;
 
     try {
@@ -208,13 +221,18 @@ export default function CategoriesPage() {
 
   return (
     <div className="p-8">
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+          Demo mode is read-only. You can explore categories, but changes here will not be saved.
+        </div>
+      )}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Categories</h1>
         <div className="flex gap-2">
           {showForm ? (
             <Button variant="outline" onClick={resetForm}>Cancel</Button>
           ) : (
-            <Button onClick={() => setShowForm(true)}>+ Add Category</Button>
+            <Button onClick={() => setShowForm(true)} disabled={isDemoUser}>+ Add Category</Button>
           )}
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Back to Dashboard
@@ -309,7 +327,7 @@ export default function CategoriesPage() {
                 )}
               </div>
 
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" disabled={isDemoUser}>
                 {editingId ? 'Update Category' : 'Create Category'}
               </Button>
             </form>
@@ -349,7 +367,7 @@ export default function CategoriesPage() {
                     <Button size="sm" variant="outline" onClick={() => handleEdit(category)}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(category.$id)}>
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(category.$id)} disabled={isDemoUser}>
                       Delete
                     </Button>
                   </div>

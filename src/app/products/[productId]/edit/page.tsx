@@ -34,6 +34,7 @@ import {
   serializeCategoryMeta,
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly } from '@/config/demo';
 
 type VariantOption = {
   name: string;
@@ -96,7 +97,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
     [selectedCategoryPath]
   );
 
-  const { currentBusiness, userBusinesses, loading: businessLoading } = useBusinessContext();
+  const { currentBusiness, userBusinesses, loading: businessLoading, isDemoUser } = useBusinessContext();
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdRef = useRef<string | null>(null);
 
@@ -459,7 +460,12 @@ export default function EditProductPage({ params }: EditProductPageProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (isDemoUser) {
+      alertDemoReadOnly();
+      return;
+    }
+
     if (!userId) {
       alert('User not authenticated');
       return;
@@ -607,6 +613,11 @@ export default function EditProductPage({ params }: EditProductPageProps) {
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
+      {isDemoUser && (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+          Demo mode is read-only. Feel free to explore, but updates to this product are not saved.
+        </div>
+      )}
       <h1 className="text-3xl font-bold mb-6">Edit Product</h1>
       
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -893,7 +904,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
         </Card>
 
         <div className="flex gap-4">
-          <Button type="submit" disabled={saving} className="flex-1">
+          <Button type="submit" disabled={saving || isDemoUser} className="flex-1">
             {saving ? 'Updating Product...' : 'Update Product'}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.push('/dashboard')}>

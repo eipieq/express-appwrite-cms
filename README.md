@@ -35,6 +35,8 @@ cp .env.example .env.local
 | `APPWRITE_API_KEY` | Service API key if you call Admin APIs from Next.js Route Handlers |
 | `PRODUCTS_API_ALLOWED_ORIGINS` | Comma-separated list of origins permitted to consume the public products API |
 | `NEXT_PUBLIC_APP_NAME` / `NEXT_PUBLIC_LOGO_URL` / `NEXT_PUBLIC_PRIMARY_COLOR` | Branding overrides for UI surfaces |
+| `NEXT_PUBLIC_DEMO_EMAIL` / `NEXT_PUBLIC_DEMO_PASSWORD` | Optional shared demo credentials exposed on the login screen for read-only exploration |
+| `NEXT_PUBLIC_PUBLIC_SITE_URL` | Optional link to the public storefront; surfaces a “View website” button in the CMS |
 
 > **Tip:** Keep `.env.local` and other secret files out of source control. The repository already ignores `.env*` files except for `.env.example`.
 
@@ -57,6 +59,13 @@ npm run lint     # Static analysis
 npm run build    # Create an optimized production build
 npm run start    # Serve the production build
 ```
+
+### Demo mode (optional)
+If you want stakeholders to click through the CMS without touching live data:
+
+- Populate `NEXT_PUBLIC_DEMO_EMAIL` and `NEXT_PUBLIC_DEMO_PASSWORD` in `.env.local` with credentials for a read-only Appwrite account.
+- The login page will surface an “Explore the Demo” button that signs in with those values and flags the session as demo-only.
+- While in demo mode, all create/update/delete actions are disabled. Forms still render so users can understand the flows, but submissions short-circuit on the client and no Appwrite mutations are executed.
 
 ## Project Structure
 ```

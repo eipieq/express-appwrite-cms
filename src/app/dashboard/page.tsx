@@ -23,6 +23,8 @@ import {
 } from '@/lib/categories';
 import { cn } from '@/lib/utils';
 import { useBusinessContext } from '@/contexts/BusinessContext';
+import { alertDemoReadOnly, setDemoModeCookie } from '@/config/demo';
+import { BRANDING } from '@/config/branding';
 
 type Product = {
     $id: string;
@@ -49,7 +51,7 @@ export default function Dashboard() {
     const [bulkCategoryTarget, setBulkCategoryTarget] = useState('');
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const router = useRouter();
-    const { currentBusiness, currentMembership, userBusinesses, loading: businessLoading } = useBusinessContext();
+    const { currentBusiness, currentMembership, loading: businessLoading, isDemoUser } = useBusinessContext();
     const [authChecked, setAuthChecked] = useState(false);
     const previousBusinessIdRef = useRef<string | null>(null);
 
@@ -79,19 +81,6 @@ export default function Dashboard() {
             isMounted = false;
         };
     }, [router]);
-
-    useEffect(() => {
-        if (!authChecked || businessLoading || !user) {
-            return;
-        }
-
-        if (!currentBusiness) {
-            if (userBusinesses.length === 0) {
-                router.replace('/onboarding');
-            }
-            return;
-        }
-    }, [authChecked, businessLoading, currentBusiness, router, user, userBusinesses]);
 
     useEffect(() => {
         if (!authChecked || businessLoading) {
@@ -166,6 +155,9 @@ export default function Dashboard() {
     }, [products]);
 
     const canManageProducts = useMemo(() => {
+        if (isDemoUser) {
+            return false;
+        }
         if (!currentBusiness || !user) {
             return false;
         }
@@ -179,7 +171,7 @@ export default function Dashboard() {
             : null;
 
         return normalizedRole === 'owner' || normalizedRole === 'admin';
-    }, [currentBusiness, currentMembership, user]);
+    }, [currentBusiness, currentMembership, user, isDemoUser]);
 
     const categoryLookup = useMemo(() => buildCategoryMap(categories), [categories]);
 
@@ -369,13 +361,23 @@ export default function Dashboard() {
         try {
             await account.deleteSession('current');
             document.cookie = 'appwrite-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+            setDemoModeCookie(false);
             router.push('/login');
         } catch (error) {
             console.error('Logout failed:', error);
         }
     };
 
+    const handleCreateBusiness = () => {
+        router.push('/onboarding?mode=create');
+    };
+
     const deleteProductById = useCallback(async (productId: string) => {
+        if (isDemoUser) {
+            alertDemoReadOnly();
+            return;
+        }
+
         if (!currentBusiness) {
             throw new Error('No active business selected.');
         }
@@ -415,11 +417,15 @@ export default function Dashboard() {
 
         setProducts((prev) => prev.filter((product) => product.$id !== productId));
         setSelectedProductIds((prev) => prev.filter((id) => id !== productId));
-    }, [currentBusiness]);
+    }, [currentBusiness, isDemoUser]);
 
     const handleDeleteProduct = async (productId: string) => {
         if (!canManageProducts) {
-            alert('You do not have permission to delete products for this business.');
+            if (isDemoUser) {
+                alertDemoReadOnly();
+            } else {
+                alert('You do not have permission to delete products for this business.');
+            }
             return;
         }
 
@@ -442,7 +448,11 @@ export default function Dashboard() {
         }
 
         if (!canManageProducts) {
-            alert('You do not have permission to delete products for this business.');
+            if (isDemoUser) {
+                alertDemoReadOnly();
+            } else {
+                alert('You do not have permission to delete products for this business.');
+            }
             return;
         }
 
@@ -467,6 +477,11 @@ export default function Dashboard() {
 
     const applyCategoryToSelected = useCallback(
         async (targetCategoryId: string | null) => {
+            if (isDemoUser) {
+                alertDemoReadOnly();
+                return;
+            }
+
             if (selectedProductIds.length === 0) {
                 return;
             }
@@ -526,7 +541,7 @@ export default function Dashboard() {
                 setBulkActionLoading(false);
             }
         },
-        [categoryLookup, clearSelection, selectedProductIds]
+        [categoryLookup, clearSelection, selectedProductIds, isDemoUser]
     );
 
     const handleApplyCategory = async () => {
@@ -720,6 +735,85 @@ export default function Dashboard() {
         );
     }
 
+    if (!currentBusiness) {
+        const createButtonDisabled = isDemoUser || businessLoading;
+
+        return (
+            <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">Welcome to {BRANDING.name}</h1>
+                        <p className="text-sm text-slate-500">
+                            Let&rsquo;s create a business so you can start organising products and inviting teammates.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button onClick={handleCreateBusiness} disabled={createButtonDisabled}>
+                            {isDemoUser ? 'Demo mode is read-only' : 'Create a business'}
+                        </Button>
+                        {BRANDING.publicSiteUrl && (
+                            <Button variant="outline" asChild>
+                                <a
+                                    href={BRANDING.publicSiteUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View website
+                                </a>
+                            </Button>
+                        )}
+                        <button
+                            onClick={handleLogout}
+                            className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-300 hover:text-red-600"
+                        >
+                            Logout
+                        </button>
+                    </div>
+                </div>
+
+                {isDemoUser && (
+                    <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+                        You&rsquo;re exploring the shared demo account. Creating businesses is disabled, but you can browse the UI safely.
+                    </div>
+                )}
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-6 shadow-sm">
+                    <h2 className="text-lg font-semibold text-blue-900">Create your first business</h2>
+                    <p className="mt-2 text-sm text-blue-800">
+                        Businesses keep products, categories, and team permissions organised. You can add more businesses later.
+                    </p>
+                    <div className="mt-4">
+                        <Button onClick={handleCreateBusiness} disabled={createButtonDisabled}>
+                            {isDemoUser ? 'Unavailable in demo mode' : 'Kick off setup'}
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {[
+                        {
+                            title: 'Products dashboard',
+                            description: 'Track catalog performance, upload images, and manage variants once a business is set up.',
+                        },
+                        {
+                            title: 'Categories',
+                            description: 'Group products into a hierarchy to power storefront navigation and search.',
+                        },
+                        {
+                            title: 'Team access',
+                            description: 'Invite collaborators with roles like Admin, Editor, or Viewer tailored to your workflow.',
+                        },
+                    ].map((item) => (
+                        <div key={item.title} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <h3 className="text-lg font-semibold text-slate-900">{item.title}</h3>
+                            <p className="mt-2 text-sm text-slate-500">{item.description}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -729,13 +823,32 @@ export default function Dashboard() {
                         Welcome back{user?.email ? `, ${user.email}` : ''}! Manage your catalogue at a glance.
                     </p>
                 </div>
-                <button
-                    onClick={handleLogout}
-                    className="self-start rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-300 hover:text-red-600"
-                >
-                    Logout
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    {BRANDING.publicSiteUrl && (
+                        <Button variant="outline" asChild>
+                            <a
+                                href={BRANDING.publicSiteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                View website
+                            </a>
+                        </Button>
+                    )}
+                    <button
+                        onClick={handleLogout}
+                        className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-300 hover:text-red-600"
+                    >
+                        Logout
+                    </button>
+                </div>
             </div>
+
+            {isDemoUser && (
+                <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+                    You are browsing in demo mode. Feel free to explore filters and layouts, but product changes are read-only and will not be saved.
+                </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -807,7 +920,7 @@ export default function Dashboard() {
                             size="sm"
                             variant={selectionMode ? 'default' : 'outline'}
                             onClick={handleToggleSelectionMode}
-                            disabled={bulkActionLoading}
+                            disabled={bulkActionLoading || !canManageProducts}
                         >
                             {selectionMode ? 'Done' : 'Manage Products'}
                         </Button>
