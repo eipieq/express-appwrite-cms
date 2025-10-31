@@ -35,7 +35,7 @@ import {
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly } from '@/config/demo';
-import { DEFAULT_CURRENCY, getCurrencySymbol } from '@/lib/currency';
+import { getCurrencySymbol, normalizeCurrencyCode } from '@/lib/currency';
 
 const parsePriceString = (value: string): number | null => {
   const trimmed = value.trim();
@@ -121,10 +121,11 @@ export default function EditProductPage({ params }: EditProductPageProps) {
   );
 
   const { currentBusiness, userBusinesses, loading: businessLoading, isDemoUser } = useBusinessContext();
-  const activeCurrency =
+  const activeCurrency = normalizeCurrencyCode(
     typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
-      ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
-      : DEFAULT_CURRENCY;
+      ? currentBusiness.settings.currency
+      : undefined
+  );
   const currencySymbol = getCurrencySymbol(activeCurrency);
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdRef = useRef<string | null>(null);

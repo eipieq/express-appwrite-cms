@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly, setDemoModeCookie } from '@/config/demo';
 import { BRANDING } from '@/config/branding';
-import { DEFAULT_CURRENCY, formatCurrencyAmount } from '@/lib/currency';
+import { formatCurrencyAmount, normalizeCurrencyCode } from '@/lib/currency';
 
 type Product = {
     $id: string;
@@ -156,6 +156,10 @@ export default function Dashboard() {
                 const productDocuments = productsResponse.documents as Array<Models.Document & Record<string, unknown>>;
 
                 const normalizedProducts = productDocuments.map((doc) => {
+                    const normalizedName =
+                        typeof doc.name === 'string' && doc.name.trim().length > 0
+                            ? doc.name
+                            : 'Untitled product';
                     const normalizedBasePrice = parseNumericPrice(doc.basePrice) ?? 0;
                     const normalizedImages = Array.isArray(doc.images)
                         ? doc.images.filter((item): item is string => typeof item === 'string')
@@ -168,15 +172,18 @@ export default function Dashboard() {
                         archivedValue === 1 ||
                         archivedValue === '1';
 
-                    return {
-                        ...doc,
+                    const normalizedProduct: Product = {
+                        ...(doc as unknown as Product),
+                        name: normalizedName,
                         basePrice: normalizedBasePrice,
                         hasVariants: Boolean(doc.hasVariants),
                         images: normalizedImages,
                         minVariantPrice: null,
                         maxVariantPrice: null,
                         archived: normalizedArchived,
-                    } as Product;
+                    };
+
+                    return normalizedProduct;
                 });
 
                 if (normalizedProducts.some((product) => product.hasVariants)) {
@@ -304,10 +311,11 @@ export default function Dashboard() {
 
     const categoryLookup = useMemo(() => buildCategoryMap(categories), [categories]);
 
-    const businessCurrency =
+    const businessCurrency = normalizeCurrencyCode(
         typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
-            ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
-            : DEFAULT_CURRENCY;
+            ? currentBusiness.settings.currency
+            : undefined
+    );
 
     const decoratedProducts = useMemo(() => {
         return products.map((product) => {

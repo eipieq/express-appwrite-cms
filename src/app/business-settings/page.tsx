@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from '@/lib/currency';
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY, normalizeCurrencyCode } from '@/lib/currency';
 
 function buildImageUrl(fileId: string): string {
   const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
@@ -95,7 +95,7 @@ export default function BusinessSettingsPage() {
       typeof currentBusiness.settings === 'object' && currentBusiness.settings !== null
         ? currentBusiness.settings.currency
         : undefined;
-    setCurrency(settingsCurrency ?? DEFAULT_CURRENCY);
+    setCurrency(normalizeCurrencyCode(settingsCurrency));
   }, [currentBusiness]);
 
   const normalizedRole = useMemo(() => {
@@ -337,7 +337,7 @@ export default function BusinessSettingsPage() {
               <select
                 id="business-currency"
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value || DEFAULT_CURRENCY)}
+                onChange={(event) => setCurrency(normalizeCurrencyCode(event.target.value))}
                 disabled={!canEdit || saving || deleting}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >

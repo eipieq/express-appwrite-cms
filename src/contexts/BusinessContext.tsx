@@ -13,7 +13,7 @@ import {
 import { AppwriteException, Query, type Models } from 'appwrite';
 import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { isDemoUserEmail, setDemoModeCookie } from '@/config/demo';
-import { DEFAULT_CURRENCY, type CurrencyCode } from '@/lib/currency';
+import { DEFAULT_CURRENCY, normalizeCurrencyCode, type CurrencyCode } from '@/lib/currency';
 
 type AccountUser = Models.User<Models.Preferences>;
 
@@ -69,10 +69,7 @@ const parseBusinessSettings = (value: unknown): BusinessSettings => {
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
     const currencyValue = record.currency;
-    const normalizedCurrency =
-      typeof currencyValue === 'string' && currencyValue.length > 0
-        ? (currencyValue as CurrencyCode)
-        : DEFAULT_CURRENCY;
+    const normalizedCurrency = normalizeCurrencyCode(currencyValue);
 
     return {
       ...record,

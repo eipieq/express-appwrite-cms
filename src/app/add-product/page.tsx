@@ -32,7 +32,7 @@ import {
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly } from '@/config/demo';
-import { DEFAULT_CURRENCY, getCurrencySymbol } from '@/lib/currency';
+import { getCurrencySymbol, normalizeCurrencyCode } from '@/lib/currency';
 
 type VariantOption = {
   name: string;
@@ -85,10 +85,11 @@ export default function AddProductPage() {
     [selectedCategoryPath]
   );
 
-  const activeCurrency =
+  const activeCurrency = normalizeCurrencyCode(
     typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
-      ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
-      : DEFAULT_CURRENCY;
+      ? currentBusiness.settings.currency
+      : undefined
+  );
   const currencySymbol = getCurrencySymbol(activeCurrency);
 
   useEffect(() => {

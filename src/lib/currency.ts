@@ -50,11 +50,17 @@ export const CURRENCY_OPTIONS = Object.values(currencyCatalog).map((entry) => ({
   symbol: entry.symbol,
 }));
 
+export function isCurrencyCode(value: unknown): value is CurrencyCode {
+  return typeof value === 'string' && value in currencyCatalog;
+}
+
+export function normalizeCurrencyCode(value: unknown): CurrencyCode {
+  return isCurrencyCode(value) ? value : DEFAULT_CURRENCY;
+}
+
 export function getCurrencyConfig(code?: string | null): CurrencyConfig {
-  if (code && code in currencyCatalog) {
-    return currencyCatalog[code as CurrencyCode];
-  }
-  return currencyCatalog[DEFAULT_CURRENCY];
+  const normalized = normalizeCurrencyCode(code ?? undefined);
+  return currencyCatalog[normalized];
 }
 
 export function getCurrencySymbol(code?: string | null): string {
@@ -76,4 +82,3 @@ export function formatCurrencyAmount(amount: number, code?: string | null): stri
     return `${config.symbol}${safeAmount.toLocaleString(config.locale)}`;
   }
 }
-
