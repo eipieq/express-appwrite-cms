@@ -32,6 +32,7 @@ import {
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly } from '@/config/demo';
+import { DEFAULT_CURRENCY, getCurrencySymbol } from '@/lib/currency';
 
 type VariantOption = {
   name: string;
@@ -83,6 +84,12 @@ export default function AddProductPage() {
     () => (selectedCategoryPath.length > 0 ? formatCategoryPath(selectedCategoryPath) : ''),
     [selectedCategoryPath]
   );
+
+  const activeCurrency =
+    typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
+      ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
+      : DEFAULT_CURRENCY;
+  const currencySymbol = getCurrencySymbol(activeCurrency);
 
   useEffect(() => {
     let isMounted = true;
@@ -206,6 +213,18 @@ export default function AddProductPage() {
     });
   };
 
+  const normalizeBasePriceInput = () => {
+    const trimmed = basePrice.trim();
+    if (trimmed.length === 0) {
+      return '';
+    }
+    const parsed = parseInt(trimmed, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      return '';
+    }
+    return String(parsed);
+  };
+
   const generateVariants = () => {
     if (variantOptions.length === 0 || variantOptions.some(opt => !opt.name || opt.values.length === 0)) {
       alert('Please fill in all variant options before generating');
@@ -229,11 +248,13 @@ export default function AddProductPage() {
     
     generateCombinations(0, {});
 
+    const defaultVariantPrice = normalizeBasePriceInput();
+
     // Create variant objects
     const variants: GeneratedVariant[] = combinations.map(attrs => ({
       variantName: Object.values(attrs).join(' - '),
       attributes: attrs,
-      price: '',
+      price: defaultVariantPrice,
       sku: '',
       enabled: false
     }));
@@ -249,7 +270,18 @@ export default function AddProductPage() {
       if (field === 'price') {
         variant.price = String(value);
       } else if (field === 'enabled') {
-        variant.enabled = value as boolean;
+        const enabled = value as boolean;
+        variant.enabled = enabled;
+
+        if (enabled) {
+          const basePriceFallback = normalizeBasePriceInput();
+          if (
+            (!variant.price || variant.price.trim().length === 0) &&
+            basePriceFallback.length > 0
+          ) {
+            variant.price = basePriceFallback;
+          }
+        }
       } else if (field === 'sku' || field === 'variantName') {
         variant[field] = value as string;
       }
@@ -340,15 +372,30 @@ export default function AddProductPage() {
 
       // Create product document
       const businessId = currentBusiness.$id;
+      const parsePriceInput = (value: string) => {
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+          return null;
+        }
+        const parsed = parseInt(trimmed, 10);
+        if (Number.isNaN(parsed) || parsed < 0) {
+          return null;
+        }
+        return parsed;
+      };
+
+      const normalizedBasePrice = parsePriceInput(basePrice) ?? 0;
+
       const productData = {
         userId,
         businessId,
         name: name.trim(),
         description: description.trim() || null,
         category: categoryValue,
-        basePrice: basePrice ? parseInt(basePrice) : 0,
+        basePrice: normalizedBasePrice,
         images: imageUrls,
-        hasVariants
+        hasVariants,
+        archived: false
       };
 
       const product = await databases.createDocument(
@@ -363,8 +410,8 @@ export default function AddProductPage() {
         const enabledVariants = generatedVariants.filter(v => v.enabled);
         
         for (const variant of enabledVariants) {
-          const parsedPrice = Number(variant.price);
-          const price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+          const priceFromVariant = parsePriceInput(variant.price);
+          const price = priceFromVariant ?? normalizedBasePrice;
 
           await databases.createDocument(
             DATABASE_ID,
@@ -478,7 +525,7 @@ export default function AddProductPage() {
             </div>
 
             <div>
-              <Label htmlFor="basePrice">Base Price (₹)</Label>
+              <Label htmlFor="basePrice">Base Price ({currencySymbol})</Label>
               <Input
                 id="basePrice"
                 type="number"
@@ -620,7 +667,7 @@ export default function AddProductPage() {
                           <TableRow>
                             <TableHead className="w-[80px]">Enable</TableHead>
                             <TableHead>Variant</TableHead>
-                            <TableHead className="w-[150px]">Price (₹)</TableHead>
+                            <TableHead className="w-[150px]">Price ({currencySymbol})</TableHead>
                             <TableHead className="w-[180px]">SKU</TableHead>
                           </TableRow>
                         </TableHeader>

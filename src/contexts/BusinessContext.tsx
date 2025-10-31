@@ -13,8 +13,14 @@ import {
 import { AppwriteException, Query, type Models } from 'appwrite';
 import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { isDemoUserEmail, setDemoModeCookie } from '@/config/demo';
+import { DEFAULT_CURRENCY, type CurrencyCode } from '@/lib/currency';
 
 type AccountUser = Models.User<Models.Preferences>;
+
+type BusinessSettings = {
+  currency?: CurrencyCode;
+  [key: string]: unknown;
+};
 
 type BusinessDocument = Models.Document & {
   name?: string | null;
@@ -23,7 +29,7 @@ type BusinessDocument = Models.Document & {
   whatsappNumber?: string | null;
   address?: string | null;
   logo?: string | null;
-  settings?: Record<string, unknown> | null;
+  settings?: BusinessSettings | string | null;
 };
 
 type BusinessMembershipDocument = Models.Document & {
@@ -48,6 +54,42 @@ type BusinessContextValue = {
 const BusinessContext = createContext<BusinessContextValue | undefined>(undefined);
 
 const ACTIVE_BUSINESS_STORAGE_KEY = 'express-appwrite-cms-active-business-id';
+
+const parseBusinessSettings = (value: unknown): BusinessSettings => {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parseBusinessSettings(parsed);
+    } catch (error) {
+      console.warn('Failed to parse business settings string:', error);
+      return { currency: DEFAULT_CURRENCY };
+    }
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const currencyValue = record.currency;
+    const normalizedCurrency =
+      typeof currencyValue === 'string' && currencyValue.length > 0
+        ? (currencyValue as CurrencyCode)
+        : DEFAULT_CURRENCY;
+
+    return {
+      ...record,
+      currency: normalizedCurrency,
+    };
+  }
+
+  return { currency: DEFAULT_CURRENCY };
+};
+
+const normalizeBusinessDocument = (doc: BusinessDocument): BusinessDocument => {
+  const parsedSettings = parseBusinessSettings(doc.settings);
+  return {
+    ...doc,
+    settings: parsedSettings,
+  };
+};
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AccountUser | null>(null);
@@ -141,7 +183,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
             COLLECTIONS.BUSINESSES,
             id
           );
-          return doc as unknown as BusinessDocument;
+          return normalizeBusinessDocument(doc as unknown as BusinessDocument);
         } catch (error) {
           console.error(`Failed to load business ${id}`, error);
           return null;

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { BRANDING } from "@/config/branding";
 import { alertDemoReadOnly } from '@/config/demo';
 import { X } from 'lucide-react';
+import { DEFAULT_CURRENCY } from '@/lib/currency';
 
 function slugify(value: string): string {
   return value
@@ -118,7 +119,7 @@ function OnboardingContent() {
           whatsappNumber: normalizedWhatsapp.length > 0 ? normalizedWhatsapp : null,
           address: normalizedAddress.length > 0 ? normalizedAddress : null,
           logo: null,
-          settings: {},
+          settings: JSON.stringify({ currency: DEFAULT_CURRENCY }),
         }
       );
 

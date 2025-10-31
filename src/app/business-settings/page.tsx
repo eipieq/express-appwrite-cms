@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from '@/lib/currency';
 
 function buildImageUrl(fileId: string): string {
   const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
@@ -43,6 +44,7 @@ export default function BusinessSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState(DEFAULT_CURRENCY);
 
   useEffect(() => {
     let isMounted = true;
@@ -77,6 +79,7 @@ export default function BusinessSettingsPage() {
       setAddress('');
       setLogoPreview(null);
       setLogoFile(null);
+      setCurrency(DEFAULT_CURRENCY);
       return;
     }
 
@@ -87,6 +90,12 @@ export default function BusinessSettingsPage() {
     setAddress(typeof currentBusiness.address === 'string' ? currentBusiness.address : '');
     setLogoPreview(typeof currentBusiness.logo === 'string' ? currentBusiness.logo : null);
     setLogoFile(null);
+
+    const settingsCurrency =
+      typeof currentBusiness.settings === 'object' && currentBusiness.settings !== null
+        ? currentBusiness.settings.currency
+        : undefined;
+    setCurrency(settingsCurrency ?? DEFAULT_CURRENCY);
   }, [currentBusiness]);
 
   const normalizedRole = useMemo(() => {
@@ -178,6 +187,16 @@ export default function BusinessSettingsPage() {
       } else if (!logoPreview) {
         updatePayload.logo = null;
       }
+
+      const existingSettings =
+        typeof currentBusiness.settings === 'object' && currentBusiness.settings !== null
+          ? currentBusiness.settings
+          : {};
+
+      updatePayload.settings = JSON.stringify({
+        ...existingSettings,
+        currency,
+      });
 
       await databases.updateDocument(
         DATABASE_ID,
@@ -312,6 +331,25 @@ export default function BusinessSettingsPage() {
                 placeholder="Street, City, State, ZIP"
                 className="min-h-[120px]"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="business-currency">Currency</Label>
+              <select
+                id="business-currency"
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value || DEFAULT_CURRENCY)}
+                disabled={!canEdit || saving || deleting}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {CURRENCY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                Prices across the dashboard use this currency for formatting.
+              </p>
             </div>
             <div className="space-y-3">
               <Label htmlFor="business-logo">Logo</Label>

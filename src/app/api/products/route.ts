@@ -71,6 +71,16 @@ export async function GET(request: NextRequest) {
       ]
     );
 
+    const activeProductDocuments = productsResponse.documents.filter((product) => {
+      const archivedValue = product.archived;
+      return !(
+        archivedValue === true ||
+        archivedValue === 'true' ||
+        archivedValue === 1 ||
+        archivedValue === '1'
+      );
+    });
+
     // Fetch all variants for this business
     const variantsResponse = await databases.listDocuments(
       DATABASE_ID,
@@ -99,7 +109,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Combine products with their variants
-    const productsWithVariants = productsResponse.documents.map(product => {
+    const productsWithVariants = activeProductDocuments.map(product => {
       const categoryMeta = parseCategoryMeta(product.category);
       const categoryLabel = categoryMetaLabel(
         categoryMeta,

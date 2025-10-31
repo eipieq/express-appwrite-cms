@@ -35,6 +35,29 @@ import {
 } from '@/lib/categories';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly } from '@/config/demo';
+import { DEFAULT_CURRENCY, getCurrencySymbol } from '@/lib/currency';
+
+const parsePriceString = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const parsed = parseInt(trimmed, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+};
+
+const parseUnknownPrice = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return parsePriceString(value);
+  }
+  return null;
+};
 
 type VariantOption = {
   name: string;
@@ -98,6 +121,11 @@ export default function EditProductPage({ params }: EditProductPageProps) {
   );
 
   const { currentBusiness, userBusinesses, loading: businessLoading, isDemoUser } = useBusinessContext();
+  const activeCurrency =
+    typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
+      ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
+      : DEFAULT_CURRENCY;
+  const currencySymbol = getCurrencySymbol(activeCurrency);
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdRef = useRef<string | null>(null);
 
@@ -273,14 +301,21 @@ export default function EditProductPage({ params }: EditProductPageProps) {
           }
 
           if (variantsResponse.documents.length > 0) {
-            const loadedVariants: GeneratedVariant[] = variantsResponse.documents.map((doc) => ({
-              id: doc.$id,
-              variantName: doc.variantName,
-              attributes: JSON.parse(doc.attributes),
-              price: String(doc.price),
-              sku: doc.sku || '',
-              enabled: doc.enabled
-            }));
+            const loadedVariants: GeneratedVariant[] = variantsResponse.documents.map((doc) => {
+              const resolvedPrice =
+                parseUnknownPrice(doc.price) ??
+                parseUnknownPrice(product.basePrice) ??
+                0;
+
+              return {
+                id: doc.$id,
+                variantName: doc.variantName,
+                attributes: JSON.parse(doc.attributes),
+                price: String(resolvedPrice),
+                sku: doc.sku || '',
+                enabled: doc.enabled
+              };
+            });
 
             setExistingVariants(loadedVariants);
             setGeneratedVariants(loadedVariants);
@@ -372,6 +407,11 @@ export default function EditProductPage({ params }: EditProductPageProps) {
     });
   };
 
+  const normalizeBasePriceInput = () => {
+    const parsed = parsePriceString(basePrice);
+    return parsed === null ? '' : String(parsed);
+  };
+
   const generateVariants = () => {
     if (variantOptions.length === 0 || variantOptions.some(opt => !opt.name || opt.values.length === 0)) {
       alert('Please fill in all variant options before generating');
@@ -395,6 +435,8 @@ export default function EditProductPage({ params }: EditProductPageProps) {
     generateCombinations(0, {});
 
     // Merge with existing variants
+    const defaultVariantPrice = normalizeBasePriceInput();
+
     const variants: GeneratedVariant[] = combinations.map(attrs => {
       const variantName = Object.values(attrs).join(' - ');
       
@@ -408,7 +450,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
       return {
         variantName,
         attributes: attrs,
-        price: '',
+        price: defaultVariantPrice,
         sku: '',
         enabled: false
       };
@@ -425,7 +467,18 @@ export default function EditProductPage({ params }: EditProductPageProps) {
       if (field === 'price') {
         variant.price = String(value);
       } else if (field === 'enabled') {
-        variant.enabled = value as boolean;
+        const enabled = value as boolean;
+        variant.enabled = enabled;
+
+        if (enabled) {
+          const basePriceFallback = normalizeBasePriceInput();
+          if (
+            (!variant.price || variant.price.trim().length === 0) &&
+            basePriceFallback.length > 0
+          ) {
+            variant.price = basePriceFallback;
+          }
+        }
       } else if (field === 'sku' || field === 'variantName') {
         variant[field] = value as string;
       }
@@ -525,12 +578,13 @@ export default function EditProductPage({ params }: EditProductPageProps) {
 
       // Update product document
       const businessId = currentBusiness.$id;
+      const normalizedBasePrice = parsePriceString(basePrice) ?? 0;
       const productData = {
         businessId,
         name: name.trim(),
         description: description.trim() || null,
         category: categoryValue,
-        basePrice: basePrice ? parseInt(basePrice) : 0,
+        basePrice: normalizedBasePrice,
         images: allImages,
         hasVariants
       };
@@ -563,8 +617,8 @@ export default function EditProductPage({ params }: EditProductPageProps) {
 
         // Create new variants
         for (const variant of enabledVariants) {
-          const parsedPrice = Number(variant.price);
-          const price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+          const priceFromVariant = parsePriceString(variant.price ?? '');
+          const price = priceFromVariant ?? normalizedBasePrice;
 
           await databases.createDocument(
             DATABASE_ID,
@@ -690,7 +744,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
             </div>
 
             <div>
-              <Label htmlFor="basePrice">Base Price (₹)</Label>
+              <Label htmlFor="basePrice">Base Price ({currencySymbol})</Label>
               <Input
                 id="basePrice"
                 type="number"
@@ -860,7 +914,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
                           <TableRow>
                             <TableHead className="w-[80px]">Enable</TableHead>
                             <TableHead>Variant</TableHead>
-                            <TableHead className="w-[150px]">Price (₹)</TableHead>
+                            <TableHead className="w-[150px]">Price ({currencySymbol})</TableHead>
                             <TableHead className="w-[180px]">SKU</TableHead>
                           </TableRow>
                         </TableHeader>

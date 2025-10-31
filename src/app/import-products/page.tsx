@@ -1514,6 +1514,7 @@ export default function ImportProductsPage() {
         ...baseProductData,
         businessId,
         userId,
+        archived: false,
       };
 
       const updateProductPayload = {

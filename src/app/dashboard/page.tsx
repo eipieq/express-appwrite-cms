@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useBusinessContext } from '@/contexts/BusinessContext';
 import { alertDemoReadOnly, setDemoModeCookie } from '@/config/demo';
 import { BRANDING } from '@/config/branding';
+import { DEFAULT_CURRENCY, formatCurrencyAmount } from '@/lib/currency';
 
 type Product = {
     $id: string;
@@ -33,6 +34,28 @@ type Product = {
     basePrice: number;
     hasVariants: boolean;
     images: string[];
+    minVariantPrice: number | null;
+    maxVariantPrice: number | null;
+    archived: boolean;
+    [key: string]: unknown;
+};
+
+const parseNumericPrice = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            return null;
+        }
+        const parsed = parseInt(trimmed, 10);
+        if (Number.isNaN(parsed) || parsed < 0) {
+            return null;
+        }
+        return parsed;
+    }
+    return null;
 };
 
 export default function Dashboard() {
@@ -50,6 +73,8 @@ export default function Dashboard() {
     const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
     const [bulkCategoryTarget, setBulkCategoryTarget] = useState('');
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    const [showArchived, setShowArchived] = useState(false);
+    const [archivingProductId, setArchivingProductId] = useState<string | null>(null);
     const router = useRouter();
     const { currentBusiness, currentMembership, loading: businessLoading, isDemoUser } = useBusinessContext();
     const [authChecked, setAuthChecked] = useState(false);
@@ -101,6 +126,8 @@ export default function Dashboard() {
             setSearchTerm('');
             setSelectionMode(false);
             setSelectedProductIds([]);
+            setShowArchived(false);
+            setArchivingProductId(null);
             previousBusinessIdRef.current = activeBusinessId;
         }
 
@@ -126,7 +153,109 @@ export default function Dashboard() {
                     return;
                 }
 
-                setProducts(productsResponse.documents as unknown as Product[]);
+                const productDocuments = productsResponse.documents as Array<Models.Document & Record<string, unknown>>;
+
+                const normalizedProducts = productDocuments.map((doc) => {
+                    const normalizedBasePrice = parseNumericPrice(doc.basePrice) ?? 0;
+                    const normalizedImages = Array.isArray(doc.images)
+                        ? doc.images.filter((item): item is string => typeof item === 'string')
+                        : [];
+
+                    const archivedValue = doc.archived;
+                    const normalizedArchived =
+                        archivedValue === true ||
+                        archivedValue === 'true' ||
+                        archivedValue === 1 ||
+                        archivedValue === '1';
+
+                    return {
+                        ...doc,
+                        basePrice: normalizedBasePrice,
+                        hasVariants: Boolean(doc.hasVariants),
+                        images: normalizedImages,
+                        minVariantPrice: null,
+                        maxVariantPrice: null,
+                        archived: normalizedArchived,
+                    } as Product;
+                });
+
+                if (normalizedProducts.some((product) => product.hasVariants)) {
+                    const productIds = normalizedProducts
+                        .map((product) => product.$id)
+                        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+                    if (productIds.length > 0) {
+                        const basePriceByProduct = new Map(
+                            normalizedProducts.map((product) => [product.$id, product.basePrice])
+                        );
+                        const variantPriceMap = new Map<string, { min: number; max: number }>();
+
+                        let cursor: string | null = null;
+
+                        while (true) {
+                            const variantQueries = [
+                                Query.equal('productId', productIds),
+                                Query.limit(100),
+                            ];
+
+                            if (cursor) {
+                                variantQueries.push(Query.cursorAfter(cursor));
+                            }
+
+                            const variantsResponse = await databases.listDocuments(
+                                DATABASE_ID,
+                                COLLECTIONS.PRODUCT_VARIANTS,
+                                variantQueries
+                            );
+
+                            const docs = variantsResponse.documents;
+
+                            if (docs.length === 0) {
+                                break;
+                            }
+
+                            docs.forEach((variantDoc) => {
+                                const productId =
+                                    typeof variantDoc.productId === 'string' ? variantDoc.productId : '';
+                                if (!productId) {
+                                    return;
+                                }
+
+                                const fallbackBasePrice = basePriceByProduct.get(productId) ?? 0;
+                                const resolvedPrice = parseNumericPrice(variantDoc.price) ?? fallbackBasePrice;
+
+                                const existing = variantPriceMap.get(productId);
+                                if (existing) {
+                                    existing.min = Math.min(existing.min, resolvedPrice);
+                                    existing.max = Math.max(existing.max, resolvedPrice);
+                                } else {
+                                    variantPriceMap.set(productId, {
+                                        min: resolvedPrice,
+                                        max: resolvedPrice,
+                                    });
+                                }
+                            });
+
+                            if (docs.length < 100) {
+                                break;
+                            }
+
+                            cursor = docs[docs.length - 1].$id;
+                        }
+
+                        normalizedProducts.forEach((product) => {
+                            const priceRange = variantPriceMap.get(product.$id);
+                            product.minVariantPrice = priceRange?.min ?? null;
+                            product.maxVariantPrice = priceRange?.max ?? null;
+                        });
+                    }
+                }
+
+                if (isCancelled) {
+                    return;
+                }
+
+                setProducts(normalizedProducts);
                 setCategories(categoriesResponse);
             } catch (error) {
                 if (!isCancelled) {
@@ -175,6 +304,11 @@ export default function Dashboard() {
 
     const categoryLookup = useMemo(() => buildCategoryMap(categories), [categories]);
 
+    const businessCurrency =
+        typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
+            ? currentBusiness.settings.currency ?? DEFAULT_CURRENCY
+            : DEFAULT_CURRENCY;
+
     const decoratedProducts = useMemo(() => {
         return products.map((product) => {
             const categoryMeta = parseCategoryMeta(product.category);
@@ -190,6 +324,28 @@ export default function Dashboard() {
             };
         });
     }, [products]);
+
+    const getPriceLabel = (product: Product) => {
+        if (product.hasVariants) {
+            const minPrice = product.minVariantPrice;
+            const maxPrice = product.maxVariantPrice;
+
+            if (typeof minPrice === 'number' && typeof maxPrice === 'number') {
+                if (minPrice === maxPrice) {
+                    return formatCurrencyAmount(minPrice, businessCurrency);
+                }
+                return `${formatCurrencyAmount(minPrice, businessCurrency)} - ${formatCurrencyAmount(maxPrice, businessCurrency)}`;
+            }
+
+            if (product.basePrice > 0) {
+                return `From ${formatCurrencyAmount(product.basePrice, businessCurrency)}`;
+            }
+
+            return formatCurrencyAmount(product.basePrice, businessCurrency);
+        }
+
+        return formatCurrencyAmount(product.basePrice, businessCurrency);
+    };
 
     const categoryOptions = useMemo(() => {
         const options = new Map<string, { id: string; label: string }>();
@@ -231,6 +387,10 @@ export default function Dashboard() {
     const filteredProducts = useMemo(() => {
         const search = searchTerm.trim().toLowerCase();
         return decoratedProducts.filter((product) => {
+            if (!showArchived && product.archived) {
+                return false;
+            }
+
             const matchesCategory =
                 categoryFilter === 'all' ||
                 (product.categoryMeta && product.categoryMeta.id === categoryFilter) ||
@@ -243,7 +403,7 @@ export default function Dashboard() {
 
             return matchesCategory && matchesSearch;
         });
-    }, [decoratedProducts, categoryFilter, searchTerm]);
+    }, [decoratedProducts, categoryFilter, searchTerm, showArchived]);
 
     const groupedProducts = useMemo(() => {
         if (!groupByCategory) {
@@ -274,6 +434,10 @@ export default function Dashboard() {
     }, [filteredProducts, groupByCategory]);
 
     const productCount = filteredProducts.length;
+    const activeProductTotal = useMemo(() => {
+        return products.filter((product) => !product.archived).length;
+    }, [products]);
+    const archivedProductTotal = products.length - activeProductTotal;
     const totalCategoriesRepresented = useMemo(() => {
         const unique = new Set<string>();
         filteredProducts.forEach((product) => {
@@ -419,6 +583,64 @@ export default function Dashboard() {
         setSelectedProductIds((prev) => prev.filter((id) => id !== productId));
     }, [currentBusiness, isDemoUser]);
 
+    const updateProductArchiveState = useCallback(
+        async (productId: string, archived: boolean) => {
+            if (!canManageProducts) {
+                if (isDemoUser) {
+                    alertDemoReadOnly();
+                } else {
+                    alert('You do not have permission to update products for this business.');
+                }
+                return;
+            }
+
+            if (isDemoUser) {
+                alertDemoReadOnly();
+                return;
+            }
+
+            if (!currentBusiness) {
+                alert('No active business selected.');
+                return;
+            }
+
+            if (archived) {
+                const confirmed = confirm(
+                    'Archive this product? Archived products are hidden from the main list until restored.'
+                );
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            setArchivingProductId(productId);
+            try {
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    COLLECTIONS.PRODUCTS,
+                    productId,
+                    { archived }
+                );
+
+                setProducts((prev) =>
+                    prev.map((product) =>
+                        product.$id === productId ? { ...product, archived } : product
+                    )
+                );
+
+                if (archived) {
+                    setSelectedProductIds((prev) => prev.filter((id) => id !== productId));
+                }
+            } catch (error) {
+                console.error('Failed to update archive state:', error);
+                alert('Failed to update product archive state. Please try again.');
+            } finally {
+                setArchivingProductId(null);
+            }
+        },
+        [canManageProducts, currentBusiness, isDemoUser]
+    );
+
     const handleDeleteProduct = async (productId: string) => {
         if (!canManageProducts) {
             if (isDemoUser) {
@@ -440,6 +662,14 @@ export default function Dashboard() {
             console.error('Error deleting product:', error);
             alert('Failed to delete product');
         }
+    };
+
+    const handleArchiveProduct = async (productId: string) => {
+        await updateProductArchiveState(productId, true);
+    };
+
+    const handleRestoreProduct = async (productId: string) => {
+        await updateProductArchiveState(productId, false);
     };
 
     const handleBulkDelete = async () => {
@@ -559,10 +789,12 @@ export default function Dashboard() {
     };
 
     const renderProductCard = (product: Product & { categoryMeta: CategoryMeta | null; categoryLabel: string | null }) => {
-        const priceDisplay = product.hasVariants ? 'Has Variants' : `₹${product.basePrice}`;
+        const priceDisplay = getPriceLabel(product);
         const imageSrc = product.images?.[0];
         const categoryBadge = product.categoryMeta?.label ?? product.categoryLabel;
         const isSelected = selectionMode && selectedProductIds.includes(product.$id);
+        const isArchived = product.archived;
+        const isArchiving = archivingProductId === product.$id;
         const selectionCheckbox = selectionMode ? (
             <input
                 type="checkbox"
@@ -571,6 +803,12 @@ export default function Dashboard() {
                 onChange={() => toggleProductSelection(product.$id)}
                 disabled={bulkActionLoading}
             />
+        ) : null;
+
+        const archiveBadge = isArchived ? (
+            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                Archived
+            </span>
         ) : null;
 
         if (viewMode === 'list') {
@@ -603,29 +841,46 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-                    <div className="flex flex-1 flex-col gap-2">
-                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
-                                {categoryBadge && (
-                                    <p className="text-sm text-slate-500">{categoryBadge}</p>
-                                )}
+                        <div className="flex flex-1 flex-col gap-2">
+                            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
+                                    {categoryBadge && (
+                                        <p className="text-sm text-slate-500">{categoryBadge}</p>
+                                    )}
+                                    {archiveBadge && <div className="mt-1">{archiveBadge}</div>}
+                                </div>
+                                <span className="text-sm font-medium text-blue-600">{priceDisplay}</span>
                             </div>
-                            <span className="text-sm font-medium text-blue-600">{priceDisplay}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => router.push(`/products/${product.$id}/edit`)}
-                                className="rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-700"
-                                disabled={bulkActionLoading}
-                            >
-                                Edit
-                            </button>
-                            <button
-                                onClick={() => handleDeleteProduct(product.$id)}
-                                className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:border-red-400 hover:text-red-700"
-                                disabled={bulkActionLoading || !canManageProducts}
-                            >
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => router.push(`/products/${product.$id}/edit`)}
+                                    className="rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-700"
+                                    disabled={bulkActionLoading}
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={() =>
+                                        isArchived
+                                            ? handleRestoreProduct(product.$id)
+                                            : handleArchiveProduct(product.$id)
+                                    }
+                                    className={cn(
+                                        'rounded-md border px-3 py-1.5 text-sm font-medium transition',
+                                        isArchived
+                                            ? 'border-green-200 text-green-600 hover:border-green-400 hover:text-green-700'
+                                            : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                                    )}
+                                    disabled={bulkActionLoading || isArchiving || !canManageProducts}
+                                >
+                                    {isArchiving ? 'Working...' : isArchived ? 'Restore' : 'Archive'}
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteProduct(product.$id)}
+                                    className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:border-red-400 hover:text-red-700"
+                                    disabled={bulkActionLoading || !canManageProducts}
+                                >
                                 Delete
                             </button>
                         </div>
@@ -680,6 +935,7 @@ export default function Dashboard() {
                         {categoryBadge && (
                             <p className="text-xs text-slate-500 md:text-sm">{categoryBadge}</p>
                         )}
+                        {archiveBadge && <div className="mt-2">{archiveBadge}</div>}
                     </div>
                     <div className="flex items-center justify-between text-sm">
                         <span className="font-medium text-blue-600">{priceDisplay}</span>
@@ -692,6 +948,22 @@ export default function Dashboard() {
                             disabled={bulkActionLoading}
                         >
                             Edit
+                        </button>
+                        <button
+                            onClick={() =>
+                                isArchived
+                                    ? handleRestoreProduct(product.$id)
+                                    : handleArchiveProduct(product.$id)
+                            }
+                            className={cn(
+                                'flex-1 rounded-md px-3 py-2 text-xs font-semibold transition md:text-sm',
+                                isArchived
+                                    ? 'border border-green-200 text-green-600 hover:border-green-400 hover:text-green-700'
+                                    : 'border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                            )}
+                            disabled={bulkActionLoading || isArchiving || !canManageProducts}
+                        >
+                            {isArchiving ? 'Working...' : isArchived ? 'Restore' : 'Archive'}
                         </button>
                         <button
                             onClick={() => handleDeleteProduct(product.$id)}
@@ -852,9 +1124,13 @@ export default function Dashboard() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold uppercase text-slate-500">Total Products</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-900">{products.length}</p>
-                    <p className="text-xs text-slate-400">Across your workspace</p>
+                    <p className="text-xs font-semibold uppercase text-slate-500">Active Products</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">{activeProductTotal}</p>
+                    <p className="text-xs text-slate-400">
+                        {archivedProductTotal > 0
+                            ? `${archivedProductTotal} archived`
+                            : 'All products active'}
+                    </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase text-slate-500">Visible Now</p>
@@ -889,11 +1165,11 @@ export default function Dashboard() {
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <label className="text-xs uppercase text-slate-400">Category</label>
-                            <select
-                                value={categoryFilter}
-                                onChange={(event) => setCategoryFilter(event.target.value)}
-                                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:border-slate-300"
+                        <label className="text-xs uppercase text-slate-400">Category</label>
+                        <select
+                            value={categoryFilter}
+                            onChange={(event) => setCategoryFilter(event.target.value)}
+                            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:border-slate-300"
                             >
                                 <option value="all">All categories</option>
                                 {categoryOptions.map((option) => (
@@ -912,6 +1188,15 @@ export default function Dashboard() {
                                 className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
                             Group by category
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-600">
+                            <input
+                                type="checkbox"
+                                checked={showArchived}
+                                onChange={(event) => setShowArchived(event.target.checked)}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Show archived
                         </label>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
