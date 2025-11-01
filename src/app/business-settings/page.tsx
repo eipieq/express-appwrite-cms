@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { CURRENCY_OPTIONS, DEFAULT_CURRENCY, normalizeCurrencyCode } from '@/lib/currency';
+import { ProductCustomField } from '@/contexts/BusinessContext';
 
 function buildImageUrl(fileId: string): string {
   const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
@@ -45,6 +46,7 @@ export default function BusinessSettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState(DEFAULT_CURRENCY);
+  const [customFields, setCustomFields] = useState<ProductCustomField[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -96,6 +98,14 @@ export default function BusinessSettingsPage() {
         ? currentBusiness.settings.currency
         : undefined;
     setCurrency(normalizeCurrencyCode(settingsCurrency));
+
+    const settingsCustomFields =
+      typeof currentBusiness.settings === 'object' && currentBusiness.settings !== null
+        ? Array.isArray(currentBusiness.settings.customFields)
+          ? (currentBusiness.settings.customFields as ProductCustomField[])
+          : []
+        : [];
+    setCustomFields(settingsCustomFields);
   }, [currentBusiness]);
 
   const normalizedRole = useMemo(() => {
@@ -166,6 +176,12 @@ export default function BusinessSettingsPage() {
       return;
     }
 
+    const customFieldValidationError = validateCustomFields();
+    if (customFieldValidationError) {
+      setError(customFieldValidationError);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -196,6 +212,7 @@ export default function BusinessSettingsPage() {
       updatePayload.settings = JSON.stringify({
         ...existingSettings,
         currency,
+        customFields,
       });
 
       await databases.updateDocument(
@@ -352,6 +369,122 @@ export default function BusinessSettingsPage() {
               </p>
             </div>
             <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label>Product Custom Fields</Label>
+                  <p className="text-xs text-slate-500">
+                    Add structured attributes (brand, material, etc.) that appear on product forms.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddCustomField}
+                  disabled={!canEdit || saving || deleting}
+                >
+                  Add field
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {customFields.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                    No custom fields yet. Use the Add field button to collect extra product details like brand or material.
+                  </div>
+                ) : (
+                  customFields.map((field, index) => {
+                    const optionsValue =
+                      field.type === 'select'
+                        ? (field.options ?? []).map((option) => option.label).join('\n')
+                        : '';
+
+                    return (
+                      <div
+                        key={field.id}
+                        className="rounded-lg border border-slate-200 p-4 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-800">
+                            Field {index + 1}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => handleRemoveCustomField(field.id)}
+                            disabled={!canEdit || saving || deleting}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label>Label</Label>
+                            <Input
+                              value={field.label}
+                              onChange={(event) => handleFieldLabelChange(field.id, event.target.value)}
+                              disabled={!canEdit || saving || deleting}
+                              placeholder="Brand"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Type</Label>
+                            <select
+                              value={field.type}
+                              onChange={(event) =>
+                                handleFieldTypeChange(field.id, event.target.value === 'select' ? 'select' : 'text')
+                              }
+                              disabled={!canEdit || saving || deleting}
+                              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="text">Text</option>
+                              <option value="select">Select</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                              <input
+                                type="checkbox"
+                                checked={field.required}
+                                onChange={(event) => handleFieldRequiredChange(field.id, event.target.checked)}
+                                disabled={!canEdit || saving || deleting}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              Required
+                            </label>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Help text</Label>
+                            <Input
+                              value={field.helpText ?? ''}
+                              onChange={(event) => handleFieldHelpTextChange(field.id, event.target.value)}
+                              disabled={!canEdit || saving || deleting}
+                              placeholder="Shown beneath the field"
+                            />
+                          </div>
+                        </div>
+
+                        {field.type === 'select' && (
+                          <div className="mt-3 space-y-1.5">
+                            <Label>Options (one per line)</Label>
+                            <Textarea
+                              value={optionsValue}
+                              onChange={(event) => handleFieldOptionsChange(field.id, event.target.value)}
+                              disabled={!canEdit || saving || deleting}
+                              placeholder={'Acme\nGlobex\nSoylent'}
+                              className="min-h-[90px]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div className="space-y-3">
               <Label htmlFor="business-logo">Logo</Label>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="h-24 w-24 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
@@ -420,3 +553,111 @@ export default function BusinessSettingsPage() {
     </div>
   );
 }
+  const generateFieldId = () => `field-${Date.now()}`;
+  const generateOptionId = (prefix: string, index: number) => `${prefix}-option-${index + 1}`;
+
+  const handleAddCustomField = () => {
+    const nextId = generateFieldId();
+    setCustomFields((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        label: 'New field',
+        type: 'text',
+        required: false,
+        helpText: null,
+      },
+    ]);
+  };
+
+  const handleRemoveCustomField = (id: string) => {
+    setCustomFields((prev) => prev.filter((field) => field.id !== id));
+  };
+
+  const updateCustomField = (id: string, updater: (field: ProductCustomField) => ProductCustomField) => {
+    setCustomFields((prev) =>
+      prev.map((field) => (field.id === id ? updater(field) : field))
+    );
+  };
+
+  const handleFieldLabelChange = (id: string, label: string) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      label,
+    }));
+  };
+
+  const handleFieldTypeChange = (id: string, type: ProductCustomField['type']) => {
+    updateCustomField(id, (field) => {
+      if (field.type === type) {
+        return field;
+      }
+
+      if (type === 'select') {
+        return {
+          ...field,
+          type,
+          options:
+            field.options && field.options.length > 0
+              ? field.options
+              : [
+                  { id: generateOptionId(id, 0), label: 'Option 1' },
+                ],
+        };
+      }
+
+      return {
+        ...field,
+        type,
+        options: undefined,
+      };
+    });
+  };
+
+  const handleFieldRequiredChange = (id: string, required: boolean) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      required,
+    }));
+  };
+
+  const handleFieldHelpTextChange = (id: string, helpText: string) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      helpText: helpText.trim().length > 0 ? helpText : null,
+    }));
+  };
+
+  const handleFieldOptionsChange = (id: string, value: string) => {
+    const optionLabels = value
+      .split('\n')
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+
+    updateCustomField(id, (field) => {
+      const options = optionLabels.map((label, index) => ({
+        id: generateOptionId(id, index),
+        label,
+      }));
+      return {
+        ...field,
+        options,
+      };
+    });
+  };
+
+  const validateCustomFields = () => {
+    for (const field of customFields) {
+      if (!field.label || field.label.trim().length === 0) {
+        return 'Custom fields must have a label.';
+      }
+
+      if (field.type === 'select') {
+        if (!field.options || field.options.length === 0) {
+          return `Select field "${field.label}" must include at least one option.`;
+        }
+      }
+    }
+
+    return null;
+  };

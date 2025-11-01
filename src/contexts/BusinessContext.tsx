@@ -15,10 +15,27 @@ import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { isDemoUserEmail, setDemoModeCookie } from '@/config/demo';
 import { DEFAULT_CURRENCY, normalizeCurrencyCode, type CurrencyCode } from '@/lib/currency';
 
+type ProductCustomFieldType = 'text' | 'select';
+
+type ProductCustomFieldOption = {
+  id: string;
+  label: string;
+};
+
+export type ProductCustomField = {
+  id: string;
+  label: string;
+  type: ProductCustomFieldType;
+  required: boolean;
+  options?: ProductCustomFieldOption[];
+  helpText?: string | null;
+};
+
 type AccountUser = Models.User<Models.Preferences>;
 
 type BusinessSettings = {
   currency?: CurrencyCode;
+  customFields?: ProductCustomField[];
   [key: string]: unknown;
 };
 
@@ -55,6 +72,75 @@ const BusinessContext = createContext<BusinessContextValue | undefined>(undefine
 
 const ACTIVE_BUSINESS_STORAGE_KEY = 'express-appwrite-cms-active-business-id';
 
+const ensureCustomFieldOption = (value: unknown, index: number): ProductCustomFieldOption | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const idCandidate = record.id;
+  const labelCandidate = record.label;
+
+  const id =
+    typeof idCandidate === 'string' && idCandidate.trim().length > 0
+      ? idCandidate.trim()
+      : `option-${index + 1}`;
+  const label =
+    typeof labelCandidate === 'string' && labelCandidate.trim().length > 0
+      ? labelCandidate.trim()
+      : id;
+
+  return {
+    id,
+    label,
+  };
+};
+
+const ensureCustomField = (value: unknown, index: number): ProductCustomField | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const idCandidate = record.id;
+  const labelCandidate = record.label;
+  const typeCandidate = record.type;
+  const requiredCandidate = record.required;
+  const helpTextCandidate = record.helpText;
+
+  const id =
+    typeof idCandidate === 'string' && idCandidate.trim().length > 0
+      ? idCandidate.trim()
+      : `field-${index + 1}`;
+  const label =
+    typeof labelCandidate === 'string' && labelCandidate.trim().length > 0
+      ? labelCandidate.trim()
+      : id;
+  const type: ProductCustomFieldType =
+    typeCandidate === 'select' ? 'select' : 'text';
+  const required = requiredCandidate === true;
+  const helpText =
+    typeof helpTextCandidate === 'string' && helpTextCandidate.trim().length > 0
+      ? helpTextCandidate.trim()
+      : null;
+
+  let options: ProductCustomFieldOption[] | undefined;
+  if (type === 'select') {
+    const rawOptions = Array.isArray(record.options) ? record.options : [];
+    options = rawOptions
+      .map((option, optionIndex) => ensureCustomFieldOption(option, optionIndex))
+      .filter((option): option is ProductCustomFieldOption => option !== null);
+  }
+
+  return {
+    id,
+    label,
+    type,
+    required,
+    options,
+    helpText,
+  };
+};
+
 const parseBusinessSettings = (value: unknown): BusinessSettings => {
   if (typeof value === 'string') {
     try {
@@ -70,14 +156,21 @@ const parseBusinessSettings = (value: unknown): BusinessSettings => {
     const record = value as Record<string, unknown>;
     const currencyValue = record.currency;
     const normalizedCurrency = normalizeCurrencyCode(currencyValue);
+    const customFieldValue = record.customFields;
+    const customFields = Array.isArray(customFieldValue)
+      ? customFieldValue
+          .map((field, index) => ensureCustomField(field, index))
+          .filter((field): field is ProductCustomField => field !== null)
+      : [];
 
     return {
       ...record,
       currency: normalizedCurrency,
+      customFields,
     };
   }
 
-  return { currency: DEFAULT_CURRENCY };
+  return { currency: DEFAULT_CURRENCY, customFields: [] };
 };
 
 const normalizeBusinessDocument = (doc: BusinessDocument): BusinessDocument => {

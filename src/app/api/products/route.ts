@@ -115,6 +115,32 @@ export async function GET(request: NextRequest) {
         categoryMeta,
         typeof product.category === 'string' ? product.category : null
       );
+      let metadata: Record<string, string> = {};
+      if (typeof product.metadata === 'string') {
+        try {
+          const parsed = JSON.parse(product.metadata) as Record<string, unknown>;
+          if (parsed && typeof parsed === 'object') {
+            metadata = Object.entries(parsed).reduce<Record<string, string>>((acc, [key, value]) => {
+              if (typeof value === 'string') {
+                acc[key] = value;
+              }
+              return acc;
+            }, {});
+          }
+        } catch (error) {
+          console.warn('Failed to parse product metadata for API response', product.$id, error);
+        }
+      } else if (product.metadata && typeof product.metadata === 'object') {
+        metadata = Object.entries(product.metadata as Record<string, unknown>).reduce<Record<string, string>>(
+          (acc, [key, value]) => {
+            if (typeof value === 'string') {
+              acc[key] = value;
+            }
+            return acc;
+          },
+          {}
+        );
+      }
 
       return {
         id: product.$id,
@@ -128,7 +154,8 @@ export async function GET(request: NextRequest) {
         hasVariants: product.hasVariants,
         variants: variantsByProduct.get(product.$id) || [],
         createdAt: product.$createdAt,
-        updatedAt: product.$updatedAt
+        updatedAt: product.$updatedAt,
+        metadata,
       };
     });
 

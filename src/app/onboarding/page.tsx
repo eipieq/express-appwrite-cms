@@ -119,7 +119,7 @@ function OnboardingContent() {
           whatsappNumber: normalizedWhatsapp.length > 0 ? normalizedWhatsapp : null,
           address: normalizedAddress.length > 0 ? normalizedAddress : null,
           logo: null,
-          settings: JSON.stringify({ currency: DEFAULT_CURRENCY }),
+          settings: JSON.stringify({ currency: DEFAULT_CURRENCY, customFields: [] }),
         }
       );
 

@@ -1507,7 +1507,8 @@ export default function ImportProductsPage() {
         description: product.fullDescription || product.shortDescription || null,
         category: categoryValue,
         basePrice: 0,
-        hasVariants: product.variants.length > 0
+        hasVariants: product.variants.length > 0,
+        metadata: JSON.stringify({})
       };
 
       const createProductPayload = {

@@ -127,6 +127,29 @@ export default function EditProductPage({ params }: EditProductPageProps) {
       : undefined
   );
   const currencySymbol = getCurrencySymbol(activeCurrency);
+  const customFieldDefinitions = useMemo(
+    () =>
+      typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
+        ? Array.isArray(currentBusiness.settings.customFields)
+          ? currentBusiness.settings.customFields
+          : []
+        : [],
+    [currentBusiness?.settings]
+  );
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setCustomFieldValues((prev) => {
+      const next: Record<string, string> = {};
+      customFieldDefinitions.forEach((field) => {
+        next[field.id] = prev[field.id] ?? '';
+      });
+      return next;
+    });
+  }, [customFieldDefinitions]);
+
+  const handleCustomFieldChange = (fieldId: string, value: string) => {
+    setCustomFieldValues((prev) => ({ ...prev, [fieldId]: value }));
+  };
   const [authChecked, setAuthChecked] = useState(false);
   const previousBusinessIdRef = useRef<string | null>(null);
 
@@ -229,6 +252,27 @@ export default function EditProductPage({ params }: EditProductPageProps) {
         setBasePrice(product.basePrice ? String(product.basePrice) : '');
         setExistingImages(product.images || []);
         setHasVariants(product.hasVariants);
+        let metadataRecord: Record<string, unknown> = {};
+        if (typeof product.metadata === 'string') {
+          try {
+            const parsed = JSON.parse(product.metadata) as Record<string, unknown>;
+            if (parsed && typeof parsed === 'object') {
+              metadataRecord = parsed;
+            }
+          } catch (metadataError) {
+            console.warn('Failed to parse product metadata string:', metadataError);
+          }
+        } else if (product.metadata && typeof product.metadata === 'object') {
+          metadataRecord = product.metadata as Record<string, unknown>;
+        }
+        setCustomFieldValues(() => {
+          const next: Record<string, string> = {};
+          customFieldDefinitions.forEach((field) => {
+            const rawValue = metadataRecord[field.id];
+            next[field.id] = typeof rawValue === 'string' ? rawValue : '';
+          });
+          return next;
+        });
 
         const parsedCategoryMeta = parseCategoryMeta(product.category);
         setInitialCategoryMeta(parsedCategoryMeta);
@@ -370,7 +414,7 @@ export default function EditProductPage({ params }: EditProductPageProps) {
     return () => {
       isCancelled = true;
     };
-  }, [authChecked, businessLoading, currentBusiness, productId, router, userId, userBusinesses]);
+  }, [authChecked, businessLoading, currentBusiness, productId, router, userId, userBusinesses, customFieldDefinitions]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -547,6 +591,15 @@ export default function EditProductPage({ params }: EditProductPageProps) {
       return;
     }
 
+    for (const field of customFieldDefinitions) {
+      const rawValue = customFieldValues[field.id] ?? '';
+      const trimmed = field.type === 'select' ? rawValue : rawValue.trim();
+      if (field.required && trimmed.length === 0) {
+        alert(`Please fill the required field: ${field.label}.`);
+        return;
+      }
+    }
+
     setSaving(true);
 
     try {
@@ -580,6 +633,15 @@ export default function EditProductPage({ params }: EditProductPageProps) {
       // Update product document
       const businessId = currentBusiness.$id;
       const normalizedBasePrice = parsePriceString(basePrice) ?? 0;
+      const metadataObject = customFieldDefinitions.reduce<Record<string, string>>((acc, field) => {
+        const rawValue = customFieldValues[field.id] ?? '';
+        const value = field.type === 'select' ? rawValue : rawValue.trim();
+        if (value.length > 0) {
+          acc[field.id] = value;
+        }
+        return acc;
+      }, {});
+      const metadata = Object.keys(metadataObject).length > 0 ? JSON.stringify(metadataObject) : JSON.stringify({});
       const productData = {
         businessId,
         name: name.trim(),
@@ -587,7 +649,8 @@ export default function EditProductPage({ params }: EditProductPageProps) {
         category: categoryValue,
         basePrice: normalizedBasePrice,
         images: allImages,
-        hasVariants
+        hasVariants,
+        metadata,
       };
 
       await databases.updateDocument(
@@ -812,6 +875,65 @@ export default function EditProductPage({ params }: EditProductPageProps) {
             </div>
           </CardContent>
         </Card>
+
+        {customFieldDefinitions.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Custom Fields</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {customFieldDefinitions.map((field) => {
+                const fieldValue = customFieldValues[field.id] ?? '';
+                if (field.type === 'select') {
+                  return (
+                    <div key={field.id} className="space-y-2">
+                      <Label htmlFor={`custom-${field.id}`}>
+                        {field.label}
+                        {field.required && <span className="ml-1 text-red-500">*</span>}
+                      </Label>
+                      <select
+                        id={`custom-${field.id}`}
+                        value={fieldValue}
+                        onChange={(event) => handleCustomFieldChange(field.id, event.target.value)}
+                        disabled={saving || isDemoUser}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select {field.label}</option>
+                        {(field.options ?? []).map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {field.helpText && (
+                        <p className="text-xs text-slate-500">{field.helpText}</p>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={field.id} className="space-y-2">
+                    <Label htmlFor={`custom-${field.id}`}>
+                      {field.label}
+                      {field.required && <span className="ml-1 text-red-500">*</span>}
+                    </Label>
+                    <Input
+                      id={`custom-${field.id}`}
+                      value={fieldValue}
+                      onChange={(event) => handleCustomFieldChange(field.id, event.target.value)}
+                      disabled={saving || isDemoUser}
+                      placeholder={field.label}
+                    />
+                    {field.helpText && (
+                      <p className="text-xs text-slate-500">{field.helpText}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

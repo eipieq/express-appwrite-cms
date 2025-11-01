@@ -37,6 +37,7 @@ type Product = {
     minVariantPrice: number | null;
     maxVariantPrice: number | null;
     archived: boolean;
+    metadata?: Record<string, string> | null;
     [key: string]: unknown;
 };
 
@@ -164,6 +165,32 @@ export default function Dashboard() {
                     const normalizedImages = Array.isArray(doc.images)
                         ? doc.images.filter((item): item is string => typeof item === 'string')
                         : [];
+                    let metadata: Record<string, string> = {};
+                    if (typeof doc.metadata === 'string') {
+                        try {
+                            const parsed = JSON.parse(doc.metadata) as Record<string, unknown>;
+                            if (parsed && typeof parsed === 'object') {
+                                metadata = Object.entries(parsed).reduce<Record<string, string>>((acc, [key, value]) => {
+                                    if (typeof value === 'string') {
+                                        acc[key] = value;
+                                    }
+                                    return acc;
+                                }, {});
+                            }
+                        } catch (error) {
+                            console.warn('Failed to parse metadata for product', doc.$id, error);
+                        }
+                    } else if (doc.metadata && typeof doc.metadata === 'object') {
+                        metadata = Object.entries(doc.metadata as Record<string, unknown>).reduce<Record<string, string>>(
+                            (acc, [key, value]) => {
+                                if (typeof value === 'string') {
+                                    acc[key] = value;
+                                }
+                                return acc;
+                            },
+                            {}
+                        );
+                    }
 
                     const archivedValue = doc.archived;
                     const normalizedArchived =
@@ -181,6 +208,7 @@ export default function Dashboard() {
                         minVariantPrice: null,
                         maxVariantPrice: null,
                         archived: normalizedArchived,
+                        metadata,
                     };
 
                     return normalizedProduct;
@@ -316,6 +344,15 @@ export default function Dashboard() {
             ? currentBusiness.settings.currency
             : undefined
     );
+    const customFieldDefinitions = useMemo(
+        () =>
+            typeof currentBusiness?.settings === 'object' && currentBusiness.settings !== null
+                ? Array.isArray(currentBusiness.settings.customFields)
+                    ? currentBusiness.settings.customFields
+                    : []
+                : [],
+        [currentBusiness?.settings]
+    );
 
     const decoratedProducts = useMemo(() => {
         return products.map((product) => {
@@ -407,7 +444,14 @@ export default function Dashboard() {
             const matchesSearch =
                 search.length === 0 ||
                 product.name.toLowerCase().includes(search) ||
-                (product.categoryLabel?.toLowerCase().includes(search) ?? false);
+                (product.categoryLabel?.toLowerCase().includes(search) ?? false) ||
+                (() => {
+                    if (!product.metadata) {
+                        return false;
+                    }
+                    return Object.values(product.metadata)
+                        .some((value) => value.toLowerCase().includes(search));
+                })();
 
             return matchesCategory && matchesSearch;
         });
@@ -818,6 +862,31 @@ export default function Dashboard() {
                 Archived
             </span>
         ) : null;
+        const customFieldEntries = customFieldDefinitions
+            .map((field) => {
+                const metadataSource = product.metadata ?? {};
+                const rawValue = metadataSource ? (metadataSource as Record<string, string | undefined>)[field.id] : undefined;
+                if (!rawValue || rawValue.length === 0) {
+                    return null;
+                }
+
+                if (field.type === 'select') {
+                    const option = (field.options ?? []).find((optionEntry) => optionEntry.id === rawValue);
+                    const displayLabel = option ? option.label : rawValue;
+                    return {
+                        id: field.id,
+                        label: field.label,
+                        value: displayLabel,
+                    };
+                }
+
+                return {
+                    id: field.id,
+                    label: field.label,
+                    value: rawValue,
+                };
+            })
+            .filter((entry): entry is { id: string; label: string; value: string } => entry !== null);
 
         if (viewMode === 'list') {
             return (
@@ -849,49 +918,58 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-                        <div className="flex flex-1 flex-col gap-2">
-                            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                                <div>
-                                    <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
-                                    {categoryBadge && (
-                                        <p className="text-sm text-slate-500">{categoryBadge}</p>
-                                    )}
-                                    {archiveBadge && <div className="mt-1">{archiveBadge}</div>}
-                                </div>
-                                <span className="text-sm font-medium text-blue-600">{priceDisplay}</span>
+                    <div className="flex flex-1 flex-col gap-2">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
+                                {categoryBadge && (
+                                    <p className="text-sm text-slate-500">{categoryBadge}</p>
+                                )}
+                                {archiveBadge && <div className="mt-1">{archiveBadge}</div>}
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                <button
-                                    onClick={() => router.push(`/products/${product.$id}/edit`)}
-                                    className="rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-700"
-                                    disabled={bulkActionLoading}
-                                >
-                                    Edit
-                                </button>
-                                <button
-                                    onClick={() =>
-                                        isArchived
-                                            ? handleRestoreProduct(product.$id)
-                                            : handleArchiveProduct(product.$id)
-                                    }
-                                    className={cn(
-                                        'rounded-md border px-3 py-1.5 text-sm font-medium transition',
-                                        isArchived
-                                            ? 'border-green-200 text-green-600 hover:border-green-400 hover:text-green-700'
-                                            : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
-                                    )}
-                                    disabled={bulkActionLoading || isArchiving || !canManageProducts}
-                                >
-                                    {isArchiving ? 'Working...' : isArchived ? 'Restore' : 'Archive'}
-                                </button>
-                                <button
-                                    onClick={() => handleDeleteProduct(product.$id)}
-                                    className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:border-red-400 hover:text-red-700"
-                                    disabled={bulkActionLoading || !canManageProducts}
-                                >
+                            <span className="text-sm font-medium text-blue-600">{priceDisplay}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => router.push(`/products/${product.$id}/edit`)}
+                                className="rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-700"
+                                disabled={bulkActionLoading}
+                            >
+                                Edit
+                            </button>
+                            <button
+                                onClick={() =>
+                                    isArchived
+                                        ? handleRestoreProduct(product.$id)
+                                        : handleArchiveProduct(product.$id)
+                                }
+                                className={cn(
+                                    'rounded-md border px-3 py-1.5 text-sm font-medium transition',
+                                    isArchived
+                                        ? 'border-green-200 text-green-600 hover:border-green-400 hover:text-green-700'
+                                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                                )}
+                                disabled={bulkActionLoading || isArchiving || !canManageProducts}
+                            >
+                                {isArchiving ? 'Working...' : isArchived ? 'Restore' : 'Archive'}
+                            </button>
+                            <button
+                                onClick={() => handleDeleteProduct(product.$id)}
+                                className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:border-red-400 hover:text-red-700"
+                                disabled={bulkActionLoading || !canManageProducts}
+                            >
                                 Delete
                             </button>
                         </div>
+                        {customFieldEntries.length > 0 && (
+                            <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                                {customFieldEntries.map((entry) => (
+                                    <span key={entry.id} className="rounded-md bg-slate-100 px-2 py-1">
+                                        <span className="font-medium text-slate-600">{entry.label}:</span> {entry.value}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -949,6 +1027,15 @@ export default function Dashboard() {
                         <span className="font-medium text-blue-600">{priceDisplay}</span>
                         <span className="text-xs text-slate-400">{product.hasVariants ? 'Variants enabled' : 'Single price'}</span>
                     </div>
+                    {customFieldEntries.length > 0 && (
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            {customFieldEntries.map((entry) => (
+                                <span key={entry.id} className="rounded-md bg-slate-100 px-2 py-1">
+                                    <span className="font-medium text-slate-600">{entry.label}:</span> {entry.value}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     <div className="flex gap-2">
                         <button
                             onClick={() => router.push(`/products/${product.$id}/edit`)}
