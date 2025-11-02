@@ -153,6 +153,114 @@ export default function BusinessSettingsPage() {
     setLogoPreview(null);
   };
 
+  const generateFieldId = () => `field-${Date.now()}`;
+  const generateOptionId = (prefix: string, index: number) => `${prefix}-option-${index + 1}`;
+
+  const handleAddCustomField = () => {
+    const nextId = generateFieldId();
+    setCustomFields((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        label: 'New field',
+        type: 'text',
+        required: false,
+        helpText: null,
+      },
+    ]);
+  };
+
+  const handleRemoveCustomField = (id: string) => {
+    setCustomFields((prev) => prev.filter((field) => field.id !== id));
+  };
+
+  const updateCustomField = (
+    id: string,
+    updater: (field: ProductCustomField) => ProductCustomField
+  ) => {
+    setCustomFields((prev) => prev.map((field) => (field.id === id ? updater(field) : field)));
+  };
+
+  const handleFieldLabelChange = (id: string, label: string) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      label,
+    }));
+  };
+
+  const handleFieldTypeChange = (id: string, type: ProductCustomField['type']) => {
+    updateCustomField(id, (field) => {
+      if (field.type === type) {
+        return field;
+      }
+
+      if (type === 'select') {
+        return {
+          ...field,
+          type,
+          options:
+            field.options && field.options.length > 0
+              ? field.options
+              : [{ id: generateOptionId(id, 0), label: 'Option 1' }],
+        };
+      }
+
+      return {
+        ...field,
+        type,
+        options: undefined,
+      };
+    });
+  };
+
+  const handleFieldRequiredChange = (id: string, required: boolean) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      required,
+    }));
+  };
+
+  const handleFieldHelpTextChange = (id: string, helpText: string) => {
+    updateCustomField(id, (field) => ({
+      ...field,
+      helpText: helpText.trim().length > 0 ? helpText : null,
+    }));
+  };
+
+  const handleFieldOptionsChange = (id: string, value: string) => {
+    const optionLabels = value
+      .split('\n')
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+
+    updateCustomField(id, (field) => {
+      const options = optionLabels.map((label, index) => ({
+        id: generateOptionId(id, index),
+        label,
+      }));
+      return {
+        ...field,
+        options,
+      };
+    });
+  };
+
+  const validateCustomFields = () => {
+    for (const field of customFields) {
+      if (!field.label || field.label.trim().length === 0) {
+        return 'Custom fields must have a label.';
+      }
+
+      if (field.type === 'select') {
+        if (!field.options || field.options.length === 0) {
+          return `Select field "${field.label}" must include at least one option.`;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -553,111 +661,3 @@ export default function BusinessSettingsPage() {
     </div>
   );
 }
-  const generateFieldId = () => `field-${Date.now()}`;
-  const generateOptionId = (prefix: string, index: number) => `${prefix}-option-${index + 1}`;
-
-  const handleAddCustomField = () => {
-    const nextId = generateFieldId();
-    setCustomFields((prev) => [
-      ...prev,
-      {
-        id: nextId,
-        label: 'New field',
-        type: 'text',
-        required: false,
-        helpText: null,
-      },
-    ]);
-  };
-
-  const handleRemoveCustomField = (id: string) => {
-    setCustomFields((prev) => prev.filter((field) => field.id !== id));
-  };
-
-  const updateCustomField = (id: string, updater: (field: ProductCustomField) => ProductCustomField) => {
-    setCustomFields((prev) =>
-      prev.map((field) => (field.id === id ? updater(field) : field))
-    );
-  };
-
-  const handleFieldLabelChange = (id: string, label: string) => {
-    updateCustomField(id, (field) => ({
-      ...field,
-      label,
-    }));
-  };
-
-  const handleFieldTypeChange = (id: string, type: ProductCustomField['type']) => {
-    updateCustomField(id, (field) => {
-      if (field.type === type) {
-        return field;
-      }
-
-      if (type === 'select') {
-        return {
-          ...field,
-          type,
-          options:
-            field.options && field.options.length > 0
-              ? field.options
-              : [
-                  { id: generateOptionId(id, 0), label: 'Option 1' },
-                ],
-        };
-      }
-
-      return {
-        ...field,
-        type,
-        options: undefined,
-      };
-    });
-  };
-
-  const handleFieldRequiredChange = (id: string, required: boolean) => {
-    updateCustomField(id, (field) => ({
-      ...field,
-      required,
-    }));
-  };
-
-  const handleFieldHelpTextChange = (id: string, helpText: string) => {
-    updateCustomField(id, (field) => ({
-      ...field,
-      helpText: helpText.trim().length > 0 ? helpText : null,
-    }));
-  };
-
-  const handleFieldOptionsChange = (id: string, value: string) => {
-    const optionLabels = value
-      .split('\n')
-      .map((option) => option.trim())
-      .filter((option) => option.length > 0);
-
-    updateCustomField(id, (field) => {
-      const options = optionLabels.map((label, index) => ({
-        id: generateOptionId(id, index),
-        label,
-      }));
-      return {
-        ...field,
-        options,
-      };
-    });
-  };
-
-  const validateCustomFields = () => {
-    for (const field of customFields) {
-      if (!field.label || field.label.trim().length === 0) {
-        return 'Custom fields must have a label.';
-      }
-
-      if (field.type === 'select') {
-        if (!field.options || field.options.length === 0) {
-          return `Select field "${field.label}" must include at least one option.`;
-        }
-      }
-    }
-
-    return null;
-  };
