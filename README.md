@@ -13,7 +13,7 @@ Express Appwrite CMS is a multi-tenant product management console built with Nex
 
 ### 1. Clone and install
 ```bash
-git clone https://github.com/your-org/express-appwrite-cms.git
+git clone https://github.com/eipieq/express-appwrite-cms.git
 cd express-appwrite-cms
 npm install
 ```
