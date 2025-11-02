@@ -377,7 +377,7 @@ export default function AddProductPage() {
       const rawValue = customFieldValues[field.id] ?? '';
       const trimmed = field.type === 'select' ? rawValue : rawValue.trim();
       if (field.required && trimmed.length === 0) {
-        setError(`Please fill the required field: ${field.label}.`);
+        alert(`Please fill the required field: ${field.label}.`);
         return;
       }
     }
